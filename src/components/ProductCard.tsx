@@ -4,12 +4,12 @@ import { useCart } from '../context/CartContext';
 import {
   ProductSpec,
   DEFAULT_SPEC,
-  TEMPERATURE_OPTIONS,
-  CUPSIZE_OPTIONS,
+  SPEC_GROUPS,
   hasSpecOptions,
-  calculatePrice,
-  formatSpecLabel
-} from '../data/products';
+  calcPrice,
+  formatSpecLabel,
+  getMaxDelta
+} from '../utils/price';
 
 interface ProductCardProps {
   product: Product;
@@ -24,7 +24,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, index }) => {
   const triggerBtnRef = useRef<HTMLButtonElement>(null);
 
   const needSpec = hasSpecOptions(product.category);
-  const displayPrice = calculatePrice(product.price, tempSpec);
+  const displayPrice = calcPrice(product.price, tempSpec);
 
   const handleAddClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -62,6 +62,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, index }) => {
       document.removeEventListener('keydown', handleEsc);
     };
   }, [showModal]);
+
+  const maxCupDelta = getMaxDelta('cupSize');
 
   return (
     <>
@@ -130,7 +132,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, index }) => {
               }}>
                 {formatSpecLabel(DEFAULT_SPEC)} 起
               </span>
-              <span>大杯 +¥3</span>
+              {maxCupDelta > 0 && <span>大杯 +¥{maxCupDelta}</span>}
             </p>
           )}
           <div className="product-footer">
@@ -254,130 +256,85 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, index }) => {
                 </p>
               </div>
 
-              <div style={{ marginBottom: 18 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: '#4A2C1A',
-                    marginBottom: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                >
-                  <span>🌡️</span>
-                  <span>温度</span>
-                </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {TEMPERATURE_OPTIONS.map(opt => {
-                    const active = tempSpec.temperature === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTempSpec(s => ({ ...s, temperature: opt.value }));
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: '12px 16px',
-                          borderRadius: 12,
-                          border: active ? '2px solid #4A2C1A' : '1.5px solid #E8DFD3',
-                          background: active ? '#4A2C1A' : '#FFFFFF',
-                          color: active ? '#FFFFFF' : '#4A2C1A',
-                          fontSize: 15,
-                          fontWeight: active ? 700 : 500,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6,
-                          transition: 'all 0.18s ease-out',
-                          boxShadow: active ? '0 4px 10px rgba(74,44,26,0.2)' : 'none'
-                        }}
-                      >
-                        <span>{opt.icon}</span>
-                        <span>{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 22 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: '#4A2C1A',
-                    marginBottom: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                >
-                  <span>🥤</span>
-                  <span>杯型</span>
-                </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {CUPSIZE_OPTIONS.map(opt => {
-                    const active = tempSpec.cupSize === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTempSpec(s => ({ ...s, cupSize: opt.value }));
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: '12px 16px',
-                          borderRadius: 12,
-                          border: active ? '2px solid #4A2C1A' : '1.5px solid #E8DFD3',
-                          background: active ? '#4A2C1A' : '#FFFFFF',
-                          color: active ? '#FFFFFF' : '#4A2C1A',
-                          fontSize: 15,
-                          fontWeight: active ? 700 : 500,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: 2,
-                          transition: 'all 0.18s ease-out',
-                          boxShadow: active ? '0 4px 10px rgba(74,44,26,0.2)' : 'none'
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{
-                            display: 'inline-block',
-                            minWidth: 20,
-                            height: 20,
-                            padding: '0 6px',
-                            borderRadius: 6,
-                            background: active ? 'rgba(255,255,255,0.2)' : '#F5EFE6',
-                            color: active ? '#fff' : '#6B5B4E',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            textAlign: 'center',
-                            lineHeight: '20px'
-                          }}>
-                            {opt.suffix}
+              {SPEC_GROUPS.map((group, gi) => (
+                <div key={group.key} style={{ marginBottom: gi < SPEC_GROUPS.length - 1 ? 18 : 22 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: '#4A2C1A',
+                      marginBottom: 10,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <span>{group.icon}</span>
+                    <span>{group.label}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {group.options.map(opt => {
+                      const active = tempSpec[group.key] === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTempSpec(s => ({ ...s, [group.key]: opt.value }));
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '12px 16px',
+                            borderRadius: 12,
+                            border: active ? '2px solid #4A2C1A' : '1.5px solid #E8DFD3',
+                            background: active ? '#4A2C1A' : '#FFFFFF',
+                            color: active ? '#FFFFFF' : '#4A2C1A',
+                            fontSize: 15,
+                            fontWeight: active ? 700 : 500,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 2,
+                            transition: 'all 0.18s ease-out',
+                            boxShadow: active ? '0 4px 10px rgba(74,44,26,0.2)' : 'none'
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {opt.icon && <span>{opt.icon}</span>}
+                            {opt.suffix && (
+                              <span style={{
+                                display: 'inline-block',
+                                minWidth: 20,
+                                height: 20,
+                                padding: '0 6px',
+                                borderRadius: 6,
+                                background: active ? 'rgba(255,255,255,0.2)' : '#F5EFE6',
+                                color: active ? '#fff' : '#6B5B4E',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                textAlign: 'center',
+                                lineHeight: '20px'
+                              }}>
+                                {opt.suffix}
+                              </span>
+                            )}
+                            <span>{opt.label}</span>
                           </span>
-                          <span>{opt.label}</span>
-                        </span>
-                        {opt.priceDelta > 0 && (
-                          <span style={{
-                            fontSize: 11,
-                            opacity: 0.85,
-                            fontWeight: 500
-                          }}>
-                            +¥{opt.priceDelta}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                          {opt.priceDelta > 0 && (
+                            <span style={{
+                              fontSize: 11,
+                              opacity: 0.85,
+                              fontWeight: 500
+                            }}>
+                              +¥{opt.priceDelta}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ))}
 
               <div
                 style={{

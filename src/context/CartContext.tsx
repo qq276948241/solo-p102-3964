@@ -4,11 +4,11 @@ import { storage, generateOrderNumber, calculateEstimatedTime } from '../service
 import {
   ProductSpec,
   getCartItemKey,
-  calculatePrice,
+  calcPrice,
   DEFAULT_SPEC,
   hasSpecOptions,
-  formatSpecLabel
-} from '../data/products';
+  buildDisplayProduct
+} from '../utils/price';
 
 interface CartItemWithSpec extends CartItem {
   cartKey: string;
@@ -32,25 +32,18 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-const buildDisplayProduct = (base: Product, spec: ProductSpec | undefined, unitPrice: number, cartKey: string): Product => {
-  const specLabel = formatSpecLabel(spec);
-  const baseName = base.name.replace(/\s*·\s*(冰|热)\s*\/\s*(中杯|大杯)$/, '');
-  const displayName = specLabel ? `${baseName} · ${specLabel}` : baseName;
-  return { ...base, id: cartKey, price: unitPrice, name: displayName };
-};
-
 const normalizeItems = (raw: CartItemWithSpec[]): CartItemWithSpec[] => {
   return raw.map(it => {
     if (it.cartKey && it.unitPrice != null && it.product.name.includes('·')) return it;
     const spec = it.spec ?? (hasSpecOptions(it.product.category) ? DEFAULT_SPEC : undefined);
     const cartKey = getCartItemKey(it.product.id.replace(/_.*/, ''), spec);
-    const unitPrice = it.unitPrice ?? calculatePrice(it.product.price, spec);
+    const unitPrice = it.unitPrice ?? calcPrice(it.product.price, spec);
     return {
       ...it,
       spec,
       cartKey,
       unitPrice,
-      product: buildDisplayProduct(it.product, spec, unitPrice, cartKey)
+      product: buildDisplayProduct(it.product, spec, cartKey)
     };
   });
 };
@@ -81,8 +74,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addItem = useCallback((product: Product, spec?: ProductSpec, event?: React.MouseEvent) => {
     const finalSpec = hasSpecOptions(product.category) ? (spec ?? DEFAULT_SPEC) : undefined;
     const cartKey = getCartItemKey(product.id, finalSpec);
-    const unitPrice = calculatePrice(product.price, finalSpec);
-    const adaptedProduct = buildDisplayProduct(product, finalSpec, unitPrice, cartKey);
+    const unitPrice = calcPrice(product.price, finalSpec);
+    const adaptedProduct = buildDisplayProduct(product, finalSpec, cartKey);
 
     setItems(prev => {
       const existing = prev.find(item => item.cartKey === cartKey);
