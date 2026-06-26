@@ -100,9 +100,10 @@ export const getCartItemKey = (productId: string, spec?: ProductSpec): string =>
 export const buildDisplayProduct = (
   base: Product,
   spec: ProductSpec | undefined,
-  cartKey: string
+  cartKey: string,
+  overridePrice?: number
 ): Product => {
-  const unitPrice = calcPrice(base.price, spec);
+  const unitPrice = overridePrice ?? calcPrice(base.price, spec);
   const specLabel = formatSpecLabel(spec);
   const baseName = base.name.replace(/\s*·\s*(冰|热)\s*\/\s*(中杯|大杯)$/, '');
   const displayName = specLabel ? `${baseName} · ${specLabel}` : baseName;

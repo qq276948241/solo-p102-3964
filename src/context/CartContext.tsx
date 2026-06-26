@@ -32,20 +32,62 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+const isLegacyItem = (it: CartItemWithSpec): boolean => {
+  if (!it.cartKey) return true;
+  if (it.unitPrice == null) return true;
+  if (!it.product.name.includes('·') && hasSpecOptions(it.product.category)) return true;
+  if (it.product.id !== it.cartKey) return true;
+  return false;
+};
+
 const normalizeItems = (raw: CartItemWithSpec[]): CartItemWithSpec[] => {
-  return raw.map(it => {
-    if (it.cartKey && it.unitPrice != null && it.product.name.includes('·')) return it;
-    const spec = it.spec ?? (hasSpecOptions(it.product.category) ? DEFAULT_SPEC : undefined);
-    const cartKey = getCartItemKey(it.product.id.replace(/_.*/, ''), spec);
-    const unitPrice = it.unitPrice ?? calcPrice(it.product.price, spec);
-    return {
+  const merged = new Map<string, CartItemWithSpec>();
+
+  for (const it of raw) {
+    if (!it?.product?.id || !Number.isFinite(it.quantity) || it.quantity <= 0) continue;
+
+    if (!isLegacyItem(it)) {
+      const existing = merged.get(it.cartKey);
+      if (existing) {
+        existing.quantity += it.quantity;
+      } else {
+        merged.set(it.cartKey, { ...it });
+      }
+      continue;
+    }
+
+    const baseProductId = it.product.id.replace(/_.*/, '');
+    const needsSpec = hasSpecOptions(it.product.category);
+    const spec = it.spec ?? (needsSpec ? DEFAULT_SPEC : undefined);
+    const cartKey = getCartItemKey(baseProductId, spec);
+    const trustedUnitPrice =
+      it.unitPrice ??
+      (Number.isFinite(it.product.price) ? it.product.price : 0);
+
+    const baseProduct = {
+      ...it.product,
+      id: baseProductId,
+      price: Number.isFinite(it.product.price) ? it.product.price : 0
+    };
+
+    const normalized: CartItemWithSpec = {
       ...it,
+      quantity: it.quantity,
       spec,
       cartKey,
-      unitPrice,
-      product: buildDisplayProduct(it.product, spec, cartKey)
+      unitPrice: trustedUnitPrice,
+      product: buildDisplayProduct(baseProduct, spec, cartKey, trustedUnitPrice)
     };
-  });
+
+    const existing = merged.get(cartKey);
+    if (existing) {
+      existing.quantity += normalized.quantity;
+    } else {
+      merged.set(cartKey, normalized);
+    }
+  }
+
+  return Array.from(merged.values());
 };
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
