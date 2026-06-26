@@ -1,14 +1,28 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { CartItem, Product, Order } from '../types';
 import { storage, generateOrderNumber, calculateEstimatedTime } from '../services/storage';
+import {
+  ProductSpec,
+  getCartItemKey,
+  calculatePrice,
+  DEFAULT_SPEC,
+  hasSpecOptions,
+  formatSpecLabel
+} from '../data/products';
+
+interface CartItemWithSpec extends CartItem {
+  cartKey: string;
+  spec?: ProductSpec;
+  unitPrice: number;
+}
 
 interface CartContextType {
-  items: CartItem[];
+  items: CartItemWithSpec[];
   totalQuantity: number;
   totalPrice: number;
-  addItem: (product: Product, event?: React.MouseEvent) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  addItem: (product: Product, spec?: ProductSpec, event?: React.MouseEvent) => void;
+  removeItem: (cartKey: string) => void;
+  updateQuantity: (cartKey: string, quantity: number) => void;
   clearCart: () => void;
   checkout: (notes: string) => Order;
   lastOrder: Order | null;
@@ -18,40 +32,77 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+const buildDisplayProduct = (base: Product, spec: ProductSpec | undefined, unitPrice: number, cartKey: string): Product => {
+  const specLabel = formatSpecLabel(spec);
+  const baseName = base.name.replace(/\s*·\s*(冰|热)\s*\/\s*(中杯|大杯)$/, '');
+  const displayName = specLabel ? `${baseName} · ${specLabel}` : baseName;
+  return { ...base, id: cartKey, price: unitPrice, name: displayName };
+};
+
+const normalizeItems = (raw: CartItemWithSpec[]): CartItemWithSpec[] => {
+  return raw.map(it => {
+    if (it.cartKey && it.unitPrice != null && it.product.name.includes('·')) return it;
+    const spec = it.spec ?? (hasSpecOptions(it.product.category) ? DEFAULT_SPEC : undefined);
+    const cartKey = getCartItemKey(it.product.id.replace(/_.*/, ''), spec);
+    const unitPrice = it.unitPrice ?? calculatePrice(it.product.price, spec);
+    return {
+      ...it,
+      spec,
+      cartKey,
+      unitPrice,
+      product: buildDisplayProduct(it.product, spec, unitPrice, cartKey)
+    };
+  });
+};
+
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItemWithSpec[]>([]);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [cartBounceKey, setCartBounceKey] = useState(0);
   const [badgePopKey, setBadgePopKey] = useState(0);
 
   useEffect(() => {
-    setItems(storage.getCart());
+    setItems(normalizeItems(storage.getCart() as CartItemWithSpec[]));
     setLastOrder(storage.getLastOrder());
   }, []);
 
   useEffect(() => {
-    storage.setCart(items);
+    storage.setCart(items as unknown as CartItem[]);
   }, [items]);
 
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const totalPrice = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 
   const triggerAnimations = useCallback(() => {
     setCartBounceKey(prev => prev + 1);
     setBadgePopKey(prev => prev + 1);
   }, []);
 
-  const addItem = useCallback((product: Product, event?: React.MouseEvent) => {
+  const addItem = useCallback((product: Product, spec?: ProductSpec, event?: React.MouseEvent) => {
+    const finalSpec = hasSpecOptions(product.category) ? (spec ?? DEFAULT_SPEC) : undefined;
+    const cartKey = getCartItemKey(product.id, finalSpec);
+    const unitPrice = calculatePrice(product.price, finalSpec);
+    const adaptedProduct = buildDisplayProduct(product, finalSpec, unitPrice, cartKey);
+
     setItems(prev => {
-      const existing = prev.find(item => item.product.id === product.id);
+      const existing = prev.find(item => item.cartKey === cartKey);
       if (existing) {
         return prev.map(item =>
-          item.product.id === product.id
+          item.cartKey === cartKey
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       }
-      return [...prev, { product, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          product: adaptedProduct,
+          quantity: 1,
+          cartKey,
+          spec: finalSpec,
+          unitPrice
+        }
+      ];
     });
     triggerAnimations();
 
@@ -76,17 +127,17 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [triggerAnimations]);
 
-  const removeItem = useCallback((productId: string) => {
-    setItems(prev => prev.filter(item => item.product.id !== productId));
+  const removeItem = useCallback((cartKey: string) => {
+    setItems(prev => prev.filter(item => item.cartKey !== cartKey));
   }, []);
 
-  const updateQuantity = useCallback((productId: string, quantity: number) => {
+  const updateQuantity = useCallback((cartKey: string, quantity: number) => {
     if (quantity <= 0) {
-      setItems(prev => prev.filter(item => item.product.id !== productId));
+      setItems(prev => prev.filter(item => item.cartKey !== cartKey));
     } else {
       setItems(prev =>
         prev.map(item =>
-          item.product.id === productId ? { ...item, quantity } : item
+          item.cartKey === cartKey ? { ...item, quantity } : item
         )
       );
     }
@@ -100,7 +151,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkout = useCallback((notes: string): Order => {
     const order: Order = {
       orderNumber: generateOrderNumber(),
-      items: [...items],
+      items: [...items] as unknown as CartItem[],
       total: totalPrice,
       notes,
       createdAt: Date.now(),
@@ -140,3 +191,5 @@ export const useCart = (): CartContextType => {
   }
   return context;
 };
+
+export type { CartItemWithSpec };
